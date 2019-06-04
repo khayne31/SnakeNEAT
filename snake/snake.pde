@@ -16,7 +16,7 @@ class Snake{
     PVector colour = new PVector(0,255, 0);
     
     Snake(int s, Grid grid){
-     position = new PVector(0,0);
+     position = new PVector(1,1);
      length = 1;
      dead = false;
      speed = 1;
@@ -301,6 +301,14 @@ void draw(){
     g.show();
     seconds++;
     }
+  } else{
+     if(key == 'r'){
+       g = new Grid(grid_size, height);
+       s = new Snake(grid_size, g);
+       s.addToQueue(g.grid[(int)s.position.x][( int)s.position.y]);
+       target_pos = new PVector(g.target.id_number[0], g.target.id_number[1]);
+       start = true;
+     }
   }
 }
   
@@ -328,7 +336,7 @@ void ifHit(){
     if(!s.growing){
     s.addToQueue(g.grid[(int)s.position.x][(int)s.position.y]);
   } else{
-    s.addToQueueTarget(g.grid[(int)s.position.x][( int)s.position.y]);
+    s.addToQueueTarget(g.grid[(int)s.position.x][( int)s.position.y]); 
     count++;
   }
   
@@ -349,6 +357,7 @@ void ifHit(){
 
 void die(){
   s.dead = true;
+  start = false;
   for(Square block: s.queue){
     block.colour =  new PVector(128, 128, 128);
   }
