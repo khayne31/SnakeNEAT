@@ -1,23 +1,21 @@
 import numpy as np
+import random
+import networkx as nx
 
 
 
-class layer:
-	def __init__(self):
-		self.nodes = []
-		self.prev_layer = None
-		self.next_layer = None
-
-	def add_node(self, node):
-		self.nodes.append(node)
-
-	def remove_node(self, node):
-		self.nodes.remove(node)
-
+def random_exception(self, length, avoid = None):	
+	if avoid == None:
+		return random.randint(0, length)
+	else:
+		return_num = random.randint(0, length)
+		while return_num == avoid :
+			return_num = random.randint(0, length)
+		return return_num
 
 
 class connection:
-	def __init__(self, input_node, output_node, weight, enabled: bool):
+	def __init__(self, input_node, output_node, weight, enabled:bool = True):
 		self.input_node = input_node
 		self.output_node = output_node
 		self.weight = weight
@@ -32,6 +30,82 @@ class connection:
 	def enable(self):
 		self.enabled = True
 
+class node:
+	def __init__(self, label, value = 0, input_node = False, output_node = False):
+		self.value = value
+		self.label = label
+		self.connected_to_in = []
+		self.connected_to_out = []
+		self.is_input = input_node
+		self.is_output = output_node
+		self.evaluated = False
+		self.contributes_to = []	
+
+	def get_value(self):
+		if self.is_input or self.evaluated:
+			#even for evalueated nodes we need to update the the contributiion list
+			for connection in self.connected_to_in:
+				input_node = connection.input_node
+				if self not in input_node.contributes_to:
+					input_node.contributes_to.append(self)
+				for node in self.contributes_to:
+					if node not in input_node.contributes_to:
+						input_node.contributes_to.append(self)
+
+			return self.value
+		else:
+			for connection in self.connected_to_in:
+				if connection.enabled:
+					self.value += connection.weight * connection.input_node.get_value()
+
+					# this makes it so that each node knoews that nodes that it contributes to. Each node inherits the contributions of all the nodes that
+					# it directly connects to. Meaning if the output of node A goes into node B and the output from node B goes into both node C and Node D
+					# then node A contributes to node A, node B, and node C where node B contributes only to node C and node D. This should work for the 
+					# purpose of adding new connections to the network. We dont want there to be a connection formed from one node(X) to another node (Y)
+					# s.t. Y contributes to X. This will lead to infinite loops in the evaluation stage. The only problem with this way is that when a 
+					# connection is diabled we need to adjust the connected_to list accordingly.
+					input_node = connection.input_node
+					if self not in input_node.contributes_to:
+						input_node.contributes_to.append(self)
+					for node in self.contributes_to:
+						if node not in input_node.contributes_to:
+							input_node.contributes_to.append(self)
+			self.evaluated = True 
+
+
+		return self.value
+	def add_input_node(self, node, weight):
+		if not self.is_input:
+			connect = connection(node, self, weight)
+			self.connected_to_in.append(connect)
+			node.connected_to_out.append(connect)
+			return connect
+
+	def add_output_node(self, node, weight):
+		if not self.is_output: 	
+			con = connection(self, node, weight)
+			self.connected_to_out.append(con)
+			node.connected_to_in.append(con)
+			return con
+	def is_connected_to(self, node):
+		for connection in connected_to_in:
+			if connection.input_node == node:
+				return True
+
+		for connection in connected_to_out:
+			if connection.output_node == node:
+				return True
+		return False
+
+	def does_contributes_to(self, node):
+		for n in self.contributes_to:
+			if n == node:
+				return True
+		return False
+
+	#gonna have to clear before each evaluation of the output
+	def clear_contributions(self):
+		self.contributes_to = []
 
 class network:
 	def __init__(self):
@@ -41,26 +115,85 @@ class network:
 		self.input_nodes = []
 		self.output_nodes = []
 		self.weights = []
+		self.graph = nx.DiGraph()
 
-	def initalize_network(self):
-		self.head_layer_pointer = layer()
-		self.tail_layer_pointer = layer()
-		self.head_layer_pointer.next_layer = self.tail_layer_pointer
-		self.tail_layer_pointer.prev_layer = self.head_layer_pointer
-
-	def create_network(self, num_input_nodes: int, num_output_nodes: int, value_list: list = None):
+	def initalize_network(self, num_input_nodes: int, num_output_nodes: int, value_list: list = []):
 		#The idea is to create a basic network with no hidden layers where the inputs connect directly to the outputs. This will be the basic network
 		#The NEAT network will evolve from
 		#the value_list parameter will be the values which go into the input nodes, in order. if no list is given the values default to 0
-		values = value_list if value_list != None or len(value_list) != num_input_nodes else [0] * num_input_nodes
+		values = value_list if value_list != [] else [0] * num_input_nodes
+
+		#initializes all of the input nodes
 		for i in range(num_input_nodes):
-			new_node = node(str(i), values[i], input_node = True)
+			new_node = node("input " + str(i), values[i], input_node = True)
 			self.nodes.append(new_node)
 			self.input_nodes.append(new_node)
+		#initializes all of the output nodes
 		for i in range(num_output_nodes):
-			new_node = node(str(i+num_input_nodes), output_node = True)
+			new_node = node("output " + str(i+num_input_nodes), output_node = True)
 			self.nodes.append(new_node)
-			self.output_node()
+			self.output_nodes.append(new_node)
+		#records all of the connections in the network
+		for input_node in self.input_nodes:
+			for output in self.output_nodes:
+				self.weights.append(input_node.add_output_node(output, 1))
+
+	
+ 	
+	def mutation(self):
+		# fifty percent chance to add a new node and fifty percent change to add a connection.
+		if random.random() < 1:
+			#adds a node, c , into the network by splitting a random edge a->b into two new edges a->c and c->b. Where weight(a->c) = 1 and 
+			#weight(c->b) = weight(a->b)
+			enabled_weights = [weight for weight in self.weights if weight.enabled]
+			rand_num = random.randint(0, len(enabled_weights) - 1)
+			random_connection = enabled_weights[rand_num]
+			in_node = random_connection.input_node
+			out_node = random_connection.output_node
+			new_node = node("hidden"+str(len(self.nodes)))
+			self.weights.append(in_node.add_output_node(new_node, 1))
+			self.weights.append(new_node.add_output_node(out_node, random_connection.weight))
+			self.nodes.append(new_node)
+			random_connection.enabled = False
+		else:
+			non_output_nodes = [node for node in self.nodes if node not in self.output_nodes]
+			rand_num_1 = random_exception(len(non_output_nodes) -  1)
+			rand_num_2 = random_exception(len(non_output_nodes) -  1, avoid = rand_num_1)
+			random_node_1 = non_output_nodes[rand_num_1]
+			random_node_2 = non_output_nodes[rand_num_2]
+			#TODO: the current problem is that by adding a random connection this way there can be a node in a later layer which is an in put to a node in 
+			# a previous layer. Because of our recursion/dynamic programming approach to evaluating the output nodes this can lead to a potential infinite 
+			#loop. In order to fix this I will need to implement a version of BFS on the network to get the depth of each node. My version will start BFS on
+			#each of the input nodes. The depth of a node wil be the max depth from all the BFS runs. This might be helped with the graph library that I am
+			#using
+
+
+
+	def generate_graph(self):
+		self.graph.add_nodes_from(self.nodes)
+
+
+		self.graph.clear() 	
+		for node in self.nodes:
+		    for connection in node.connected_to_out:
+		    	if connection.enabled:
+		        	self.graph.add_edge(connection.input_node, connection.output_node, weight = connection.weight)
+		        #G.add_edge(connection.output_node, connection.input_node, weight = connection.weight)
+		        
+		labels = []
+		nodes = self.nodes
+		for node in nodes:
+		    labels.append(node.label)
+		mapping = dict(zip(nodes, labels))
+		self.graph = nx.relabel_nodes(self.graph, mapping)
+
+	def draw_graph(self):
+		nx.draw_shell(self.graph, with_labels = True)
+
+
+
+
+
 
 
 
@@ -74,36 +207,6 @@ class gene:
 		self.weight = weight
 		self.enabled = enabled
 		self.inovation = inovation_number
-
-class node:
-	def __init__(self, label, value = 0, input_node = False, output_node = False):
-		self.value = value
-		self.label = label
-		self.connected_to_in = []
-		self.connected_to_out = []
-		self.is_input = input_node
-		self.is_output = output_node
-		self.evaluated = False
-
-	def get_value(self):
-		if self.is_input or self.evaluated:
-			return self.value
-		else:
-			for connection in self.connected_to_in:
-				if connection.enabled:
-					self.value += connection.weight * connection.input_node.get_value()
-			self.evaluated =True 
-
-		return self.value
-	def add_input_node(self, node, weight):
-		connect = connection(node, self, weight, True)
-		self.connected_to_in.append(connect)
-		node.connected_to_out.append(connect)
-
-	def add_output_node(self, node, weight):
-		con = connection(self, node, weight, True)
-		self.connected_to_out.append(con)
-		node.connected_to_in.append(con)
 
 input1 = node("1", 1, input_node = True)
 input2 = node("1", 2, input_node = True)
