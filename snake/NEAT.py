@@ -4,7 +4,7 @@ import networkx as nx
 
 
 
-def random_exception(self, length, avoid = None):	
+def random_exception(length, avoid = None):	
 	if avoid == None:
 		return random.randint(0, length)
 	else:
@@ -41,39 +41,36 @@ class node:
 		self.evaluated = False
 		self.contributes_to = []	
 
+	def evaluate_contributions(self, start_node):
+		# this makes it so that each node knoews that nodes that it contributes to. Each node inherits the contributions of all the nodes that
+		# it directly connects to. Meaning if the output of node A goes into node B and the output from node B goes into both node C and Node D
+		# then node A contributes to node A, node B, and node C where node B contributes only to node C and node D. This should work for the 
+		# purpose of adding new connections to the network. We dont want there to be a connection formed from one node(X) to another node (Y)
+		# s.t. Y contributes to X. This will lead to infinite loops in the evaluation stage. The only problem with this way is that when a 
+		# connection is diabled we need to adjust the connected_to list accordingly.
+		for connection in start_node.connected_to_in:
+			input_node = connection.input_node
+			if start_node not in input_node.contributes_to:
+				input_node.contributes_to.append(start_node)
+			for node in start_node.contributes_to:
+				if node not in input_node.contributes_to:
+					input_node.contributes_to.append(node)
+			self.evaluate_contributions(input_node)
+			
+
+
+
 	def get_value(self):
 		if self.is_input or self.evaluated:
-			#even for evalueated nodes we need to update the the contributiion list
-			for connection in self.connected_to_in:
-				input_node = connection.input_node
-				if self not in input_node.contributes_to:
-					input_node.contributes_to.append(self)
-				for node in self.contributes_to:
-					if node not in input_node.contributes_to:
-						input_node.contributes_to.append(self)
-
 			return self.value
 		else:
 			for connection in self.connected_to_in:
 				if connection.enabled:
 					self.value += connection.weight * connection.input_node.get_value()
-
-					# this makes it so that each node knoews that nodes that it contributes to. Each node inherits the contributions of all the nodes that
-					# it directly connects to. Meaning if the output of node A goes into node B and the output from node B goes into both node C and Node D
-					# then node A contributes to node A, node B, and node C where node B contributes only to node C and node D. This should work for the 
-					# purpose of adding new connections to the network. We dont want there to be a connection formed from one node(X) to another node (Y)
-					# s.t. Y contributes to X. This will lead to infinite loops in the evaluation stage. The only problem with this way is that when a 
-					# connection is diabled we need to adjust the connected_to list accordingly.
-					input_node = connection.input_node
-					if self not in input_node.contributes_to:
-						input_node.contributes_to.append(self)
-					for node in self.contributes_to:
-						if node not in input_node.contributes_to:
-							input_node.contributes_to.append(self)
 			self.evaluated = True 
-
-
 		return self.value
+
+
 	def add_input_node(self, node, weight):
 		if not self.is_input:
 			connect = connection(node, self, weight)
@@ -98,10 +95,7 @@ class node:
 		return False
 
 	def does_contributes_to(self, node):
-		for n in self.contributes_to:
-			if n == node:
-				return True
-		return False
+		return node in self.contributes_to
 
 	#gonna have to clear before each evaluation of the output
 	def clear_contributions(self):
@@ -109,8 +103,6 @@ class node:
 
 class network:
 	def __init__(self):
-		self.head_layer_pointer = None #head pointer of a linked list of layers
-		self.tail_layer_pointer = None
 		self.nodes = []
 		self.input_nodes = []
 		self.output_nodes = []
@@ -142,7 +134,7 @@ class network:
  	
 	def mutation(self):
 		# fifty percent chance to add a new node and fifty percent change to add a connection.
-		if random.random() < 1:
+		if random.random() < .5:
 			#adds a node, c , into the network by splitting a random edge a->b into two new edges a->c and c->b. Where weight(a->c) = 1 and 
 			#weight(c->b) = weight(a->b)
 			enabled_weights = [weight for weight in self.weights if weight.enabled]
@@ -156,11 +148,26 @@ class network:
 			self.nodes.append(new_node)
 			random_connection.enabled = False
 		else:
+			for output in self.output_nodes:
+				output.evaluate_contributions(output)
+
 			non_output_nodes = [node for node in self.nodes if node not in self.output_nodes]
 			rand_num_1 = random_exception(len(non_output_nodes) -  1)
 			rand_num_2 = random_exception(len(non_output_nodes) -  1, avoid = rand_num_1)
 			random_node_1 = non_output_nodes[rand_num_1]
 			random_node_2 = non_output_nodes[rand_num_2]
+
+			while random_node_2.does_contributes_to(random_node_1) or random_node_2.is_input:
+				rand_num_1 = random_exception(len(non_output_nodes) -  1)
+				rand_num_2 = random_exception(len(non_output_nodes) -  1, avoid = rand_num_1)
+				random_node_1 = non_output_nodes[rand_num_1]
+				random_node_2 = non_output_nodes[rand_num_2]
+
+			#adjust exact number later
+			random_node_1.add_output_node(random_node_2, random.randint(-1000, 1000))
+
+
+
 			#TODO: the current problem is that by adding a random connection this way there can be a node in a later layer which is an in put to a node in 
 			# a previous layer. Because of our recursion/dynamic programming approach to evaluating the output nodes this can lead to a potential infinite 
 			#loop. In order to fix this I will need to implement a version of BFS on the network to get the depth of each node. My version will start BFS on
@@ -170,10 +177,11 @@ class network:
 
 
 	def generate_graph(self):
+		self.graph.clear() 	
 		self.graph.add_nodes_from(self.nodes)
 
 
-		self.graph.clear() 	
+		
 		for node in self.nodes:
 		    for connection in node.connected_to_out:
 		    	if connection.enabled:
