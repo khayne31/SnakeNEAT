@@ -131,10 +131,48 @@ class network:
 				self.weights.append(input_node.add_output_node(output, 1))
 
 	
+	# TODO: Develop a way to convert a network into a list of genes, probally should make each connection have an innovation number which gets incremented
+	# with each structural mutation. Then create a way to convert from a list of genes into a network
  	
 	def mutation(self):
 		# fifty percent chance to add a new node and fifty percent change to add a connection.
-		if random.random() < .5:
+		coin_flip = random.random()
+
+		# 70% chance to change the weight of a random connection through mutation, 10 percent chance to enable or disable a connection,
+		# 10% to add a random node, 10% to add a new connection witha  random weight value
+		if coin_flip > .3:
+			#weight mutatiions
+			coin_flip_2 = random.random()	
+			enabled_weights = [weight for weight in self.weights if weight.enabled]
+			rand_num = random.randint(0, len(enabled_weights) - 1)
+			random_connection = enabled_weights[rand_num]
+
+			# we can a) completly change it with a random number b) change the weight by some percentage (multiply by some number between 0 and 2) 
+			# c) add or subtract a random number between 0 and 1 to/from the weight d) change the sign of the weight e) some combination of these 
+			# techniqiues
+
+			#40% chance to change by some percentage, 40% to add a number from [-1, 1) 10% to flip sign, and 10% to chnage to a completly random number
+			if coin_flip_2 > .6		
+				#multiply by a random_number from  0 to 2
+				random_connection.weight *= random.random() * 2
+				
+			elif coin_flip_2 > .2:
+				#add a random number from -1 to 1
+				random_connection.weight += random.random() * 2 - 1
+			elif coin_flip_2 > .1:
+				#change the sign
+				random_connection.weight *= -1
+			else:
+				#adjust later curently [-100, 100)
+				random_connection.weight = random.random() * 200 - 100
+
+		elif coin_flip > .2:
+			#enable or disable a weight
+			rand_num = random.randint(0, len(self.weights) - 1)
+			rand_connection = self.weights[rand_num]
+			connection.enabled = not connection.enabled
+
+		elif coin_flip > .1:
 			#adds a node, c , into the network by splitting a random edge a->b into two new edges a->c and c->b. Where weight(a->c) = 1 and 
 			#weight(c->b) = weight(a->b)
 			enabled_weights = [weight for weight in self.weights if weight.enabled]
@@ -148,6 +186,7 @@ class network:
 			self.nodes.append(new_node)
 			random_connection.enabled = False
 		else:
+			#mutate the structutre of the network
 			for output in self.output_nodes:
 				output.evaluate_contributions(output)
 
@@ -157,22 +196,18 @@ class network:
 			random_node_1 = non_output_nodes[rand_num_1]
 			random_node_2 = non_output_nodes[rand_num_2]
 
+			# this prevents a connection being two nodes where the input node in this connecion X has its value affected by the output node Y
+			# in other words Y's value contributes to the value of X. Tbis would create and infinite loop
 			while random_node_2.does_contributes_to(random_node_1) or random_node_2.is_input:
 				rand_num_1 = random_exception(len(non_output_nodes) -  1)
 				rand_num_2 = random_exception(len(non_output_nodes) -  1, avoid = rand_num_1)
 				random_node_1 = non_output_nodes[rand_num_1]
 				random_node_2 = non_output_nodes[rand_num_2]
 
-			#adjust exact number later
-			random_node_1.add_output_node(random_node_2, random.randint(-1000, 1000))
+			#adjust exact number range later. not just in b ut floats toos
+			self.weights.append(random_node_1.add_output_node(random_node_2, random.randint(-1000, 1000)))
 
-
-
-			#TODO: the current problem is that by adding a random connection this way there can be a node in a later layer which is an in put to a node in 
-			# a previous layer. Because of our recursion/dynamic programming approach to evaluating the output nodes this can lead to a potential infinite 
-			#loop. In order to fix this I will need to implement a version of BFS on the network to get the depth of each node. My version will start BFS on
-			#each of the input nodes. The depth of a node wil be the max depth from all the BFS runs. This might be helped with the graph library that I am
-			#using
+			
 
 
 
@@ -197,12 +232,6 @@ class network:
 
 	def draw_graph(self):
 		nx.draw_shell(self.graph, with_labels = True)
-
-
-
-
-
-
 
 
 
