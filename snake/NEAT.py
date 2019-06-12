@@ -34,7 +34,7 @@ class connection:
 class node:
 	def __init__(self, label, value = 0, input_node = False, output_node = False):
 		self.value = value #filled by parameter
-		self.label = label #filled by parameter
+		self.label = label #filled by parameter, unique to a given node (mayb a hash value)
 		self.is_input = input_node #filled by parameter
 		self.is_output = output_node #filled by parameter
 		self.connected_to_in = [] #modified by add_input_node in this node and add_output_node in another node
@@ -50,6 +50,7 @@ class node:
 		# This will either modify the connected_to_in or connected_to_out lists
 
 
+	
 	def evaluate_contributions(self, start_node):
 		# this makes it so that each node knoews that nodes that it contributes to. Each node inherits the contributions of all the nodes that
 		# it directly connects to. Meaning if the output of node A goes into node B and the output from node B goes into both node C and Node D
@@ -127,6 +128,13 @@ class network:
 		self.graph = nx.DiGraph() # a graph representation of the network
 		self.current_innovation = 0 #the current innovation nnumber, representing the number of structural mutations
 		self.genes = [] #contains the genes which reppresent this network
+
+
+	def reset_network(self):
+		for node in self.nodes: 
+			if not node.is_input:
+				node.value = 0
+
 
 	def initalize_network(self, num_input_nodes: int, num_output_nodes: int, value_list: list = []):
 		#The idea is to create a basic network with no hidden layers where the inputs connect directly to the outputs. This will be the basic network
@@ -275,40 +283,13 @@ class network:
 		for weight in sorted_weights:
 			if weight.inovation_number > self.current_innovation:
 				self.genes.append(gene(weight.input_node, weight.output_node, weight.weight, weight.enabled, weight.innovation_number))
-	def create_new_network_from_genes(self, genes):
-		return_network = network()
-		for gene in genes:
-			in_node = gene.input
-			out_node = gene.output
-
-			new_in_node = node(in_node.label, in_node.value, in_node.is_input, in_node.is_output)
-			new_out_node = node(out_node.label. out_node.value, out_node.is_input, out_node.is_output)
-
-			# This covers the nodes attribtute of the network
-			if in_node not in return_network.nodes:
-				return_network.nodes.append()
-			if out_node not in return_network.nodes:
-				return_network.nodes.append()
-
-			# This covers the input_nodes and output_nodes attributes of the network
-			if in_node not in self.input_nodes and in_node.is_input:
-				return_network.input_nodes.append(in_node)
-			if out_node not in self.output_nodes and out_node.is_output:
-				return_network.output_nodes.append(out_node)
 
 
-			# This covers the weights attribute of the network
-			new_connection = new_in_node.add_output_node(new_out_node, gene.weight, gene.innovation_number)
-			new_connection.enabled = gene.enabled
-			return_network.weights.append(new_connection)
-
-			#this will update the innovation number
-			return_network.current_innovation = gene.innovation_number
-		return_network.genes = genes
-		return return_network
-
-
-
+	def evaluate_network(self):
+		return_values = []
+		for node in self.output_nodes:
+			return_values.append((node.get_value(), node.label))
+		return return_values
 
 class gene:
 	def __init__(self, input_node, output_node, weight, enabled, innovation_number):
@@ -323,5 +304,75 @@ class gene:
 		print("output: ", self.output.label)
 		print("innotvaion number: ", self.innovation)
 		print("DISABLED \n\n\n" if not self.enabled else "\n\n\n")
+
+
+def create_new_network_from_genes(genes):
+	return_network = network()
+	for gene in genes:
+		in_node = gene.input
+		out_node = gene.output
+		new_in_node = None
+		new_out_node = None
+
+		found_in = False
+		found_out = False
+		# iIn the event that the input or output node is already in the network
+		for item in return_network.nodes:
+			# Compares the labels since they are unique. Cannot compare the actual objects
+			if item.label == in_node.label:
+				new_in_node = item
+				found_in = True
+			if item.label == out_node.label:
+				new_out_node = item
+				found_out = True
+
+		if not found_in:
+			new_in_node = node(in_node.label, in_node.value, in_node.is_input, in_node.is_output)
+		if not found_out:
+			new_out_node = node(out_node.label, out_node.value, out_node.is_input, out_node.is_output)
+
+		# This covers the nodes attribtute of the network
+		if new_in_node not in return_network.nodes:
+			return_network.nodes.append(new_in_node)
+		if new_out_node not in return_network.nodes:
+			return_network.nodes.append(new_out_node)
+
+		# This covers the input_nodes and output_nodes attributes of the network
+		if new_in_node not in return_network.input_nodes and  new_in_node.is_input:
+			return_network.input_nodes.append(new_in_node)
+		if new_out_node not in return_network.output_nodes and new_out_node.is_output:
+			return_network.output_nodes.append(new_out_node)
+
+
+		# This covers the weights attribute of the network
+		new_connection = new_in_node.add_output_node(new_out_node, gene.weight, gene.innovation)
+		new_connection.enabled = gene.enabled
+		return_network.weights.append(new_connection)
+
+		#this will update the innovation number
+		return_network.current_innovation = gene.innovation
+
+	return_network.genes = genes
+	return return_network
+
+def is_networks_equal(X, Y):
+	X.generate_graph()
+	Y.generate_graph()
+
+	graph1 = X.graph
+	graph2 = Y.graph
+
+	if not nx.is_isomorphic(graph1, graph2):
+		return False
+
+	for node in X.nodes:
+	    for another_node in Y.nodes:
+	        if node.label == another_node.label:
+	            if node.value != another_node.value:
+	            	return False
+	return True
+
+
+
 
 
