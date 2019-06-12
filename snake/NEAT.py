@@ -15,11 +15,12 @@ def random_exception(length, avoid = None):
 
 
 class connection:
-	def __init__(self, input_node, output_node, weight, enabled:bool = True):
+	def __init__(self, input_node, output_node, weight, innovation_number, enabled: bool = True):
 		self.input_node = input_node
 		self.output_node = output_node
 		self.weight = weight
 		self.enabled = enabled
+		self.innovation_number = innovation_number
 
 	def in_value(self):
 		return self.input_node.value
@@ -32,14 +33,22 @@ class connection:
 
 class node:
 	def __init__(self, label, value = 0, input_node = False, output_node = False):
-		self.value = value
-		self.label = label
-		self.connected_to_in = []
-		self.connected_to_out = []
-		self.is_input = input_node
-		self.is_output = output_node
-		self.evaluated = False
-		self.contributes_to = []	
+		self.value = value #filled by parameter
+		self.label = label #filled by parameter
+		self.is_input = input_node #filled by parameter
+		self.is_output = output_node #filled by parameter
+		self.connected_to_in = [] #modified by add_input_node in this node and add_output_node in another node
+		self.connected_to_out = [] #modified by add_output_node in this node and add_input_node in another node
+		self.evaluated = False #modified by get_value
+		self.contributes_to = [] #modified by evaluate_contributions
+
+		#CHECKLIST FOR CREATING A NEW NODE
+		# 1) Make sure all the parameters are correct. This will take care of the 
+		# value, label, is_input, and is_output attributes
+		# 2) Depending on whether or not this node is in input or output node it will
+		# either call be called by add_input_node or it will call add_input_node. 
+		# This will either modify the connected_to_in or connected_to_out lists
+
 
 	def evaluate_contributions(self, start_node):
 		# this makes it so that each node knoews that nodes that it contributes to. Each node inherits the contributions of all the nodes that
@@ -71,25 +80,33 @@ class node:
 		return self.value
 
 
-	def add_input_node(self, node, weight):
+	def add_input_node(self, node, weight, inno = None):
+		curr_iter = inno if inno != None else 0
 		if not self.is_input:
-			connect = connection(node, self, weight)
+			connect = connection(node, self, weight, curr_iter)
 			self.connected_to_in.append(connect)
 			node.connected_to_out.append(connect)
 			return connect
 
-	def add_output_node(self, node, weight):
+	def add_output_node(self, node, weight, inno = None):
+		curr_iter = inno if inno != None else 0
 		if not self.is_output: 	
-			con = connection(self, node, weight)
+			con = connection(self, node, weight, curr_iter)
 			self.connected_to_out.append(con)
 			node.connected_to_in.append(con)
 			return con
-	def is_connected_to(self, node):
-		for connection in connected_to_in:
+
+	#checks if a given node is an input to the current node
+	def is_connected_to_in(self, node):
+		for connection in self.connected_to_in:
 			if connection.input_node == node:
 				return True
 
-		for connection in connected_to_out:
+		
+		return False
+	#checks if the current node outputs to the specified node
+	def is_connected_to_out(self, node):
+		for connection in self.connected_to_out:
 			if connection.output_node == node:
 				return True
 		return False
@@ -103,11 +120,13 @@ class node:
 
 class network:
 	def __init__(self):
-		self.nodes = []
-		self.input_nodes = []
-		self.output_nodes = []
-		self.weights = []
-		self.graph = nx.DiGraph()
+		self.nodes = [] #contains all the nodes in the network
+		self.input_nodes = [] #contains all the input nodes of the network
+		self.output_nodes = [] #contains all the putput nodes of the network
+		self.weights = [] #contains all the connections of the network
+		self.graph = nx.DiGraph() # a graph representation of the network
+		self.current_innovation = 0 #the current innovation nnumber, representing the number of structural mutations
+		self.genes = [] #contains the genes which reppresent this network
 
 	def initalize_network(self, num_input_nodes: int, num_output_nodes: int, value_list: list = []):
 		#The idea is to create a basic network with no hidden layers where the inputs connect directly to the outputs. This will be the basic network
@@ -152,7 +171,7 @@ class network:
 			# techniqiues
 
 			#40% chance to change by some percentage, 40% to add a number from [-1, 1) 10% to flip sign, and 10% to chnage to a completly random number
-			if coin_flip_2 > .6		
+			if coin_flip_2 > .6:		
 				#multiply by a random_number from  0 to 2
 				random_connection.weight *= random.random() * 2
 				
@@ -170,9 +189,12 @@ class network:
 			#enable or disable a weight
 			rand_num = random.randint(0, len(self.weights) - 1)
 			rand_connection = self.weights[rand_num]
-			connection.enabled = not connection.enabled
+			rand_connection.enabled = not rand_connection.enabled
 
-		elif coin_flip > .1:
+		elif coin_flip > .1 or self.current_innovation == 0: # in the event that the network is just beginning
+			# innovation number gets updated for each of the structural mutations
+			self.current_innovation += 1
+
 			#adds a node, c , into the network by splitting a random edge a->b into two new edges a->c and c->b. Where weight(a->c) = 1 and 
 			#weight(c->b) = weight(a->b)
 			enabled_weights = [weight for weight in self.weights if weight.enabled]
@@ -181,11 +203,17 @@ class network:
 			in_node = random_connection.input_node
 			out_node = random_connection.output_node
 			new_node = node("hidden"+str(len(self.nodes)))
-			self.weights.append(in_node.add_output_node(new_node, 1))
-			self.weights.append(new_node.add_output_node(out_node, random_connection.weight))
+			self.weights.append(in_node.add_output_node(new_node, 1, self.current_innovation))
+			self.weights.append(new_node.add_output_node(out_node, random_connection.weight, self.current_innovation))
 			self.nodes.append(new_node)
 			random_connection.enabled = False
+			
+
 		else:
+
+			# innovation number gets updated for each of the structural mutations
+			self.current_innovation += 1
+
 			#mutate the structutre of the network
 			for output in self.output_nodes:
 				output.evaluate_contributions(output)
@@ -198,14 +226,17 @@ class network:
 
 			# this prevents a connection being two nodes where the input node in this connecion X has its value affected by the output node Y
 			# in other words Y's value contributes to the value of X. Tbis would create and infinite loop
-			while random_node_2.does_contributes_to(random_node_1) or random_node_2.is_input:
+			while (random_node_2.does_contributes_to(random_node_1) and random_node_1.is_connected_to_out(random_node_2)) or random_node_2.is_input:
 				rand_num_1 = random_exception(len(non_output_nodes) -  1)
 				rand_num_2 = random_exception(len(non_output_nodes) -  1, avoid = rand_num_1)
 				random_node_1 = non_output_nodes[rand_num_1]
 				random_node_2 = non_output_nodes[rand_num_2]
 
 			#adjust exact number range later. not just in b ut floats toos
-			self.weights.append(random_node_1.add_output_node(random_node_2, random.randint(-1000, 1000)))
+
+
+			self.weights.append(random_node_1.add_output_node(random_node_2, random.randint(-1000, 1000), self.current_innovation))
+			
 
 			
 
@@ -233,59 +264,64 @@ class network:
 	def draw_graph(self):
 		nx.draw_shell(self.graph, with_labels = True)
 
+	def convert_to_genes(self):
+		self.genes = []
+		sorted_weights = sorted(self.weights, key = lambda x: x.innovation_number)
+		for weight in sorted_weights:
+			self.genes.append(gene(weight.input_node, weight.output_node, weight.weight, weight.enabled, weight.innovation_number))
+
+	def add_new_genes(self):
+		sorted_weights = sorted(self.weights, key = lambda x: x.innovation_number)
+		for weight in sorted_weights:
+			if weight.inovation_number > self.current_innovation:
+				self.genes.append(gene(weight.input_node, weight.output_node, weight.weight, weight.enabled, weight.innovation_number))
+	def create_new_network_from_genes(self, genes):
+		return_network = network()
+		for gene in genes:
+			in_node = gene.input
+			out_node = gene.output
+
+			new_in_node = node(in_node.label, in_node.value, in_node.is_input, in_node.is_output)
+			new_out_node = node(out_node.label. out_node.value, out_node.is_input, out_node.is_output)
+
+			# This covers the nodes attribtute of the network
+			if in_node not in return_network.nodes:
+				return_network.nodes.append()
+			if out_node not in return_network.nodes:
+				return_network.nodes.append()
+
+			# This covers the input_nodes and output_nodes attributes of the network
+			if in_node not in self.input_nodes and in_node.is_input:
+				return_network.input_nodes.append(in_node)
+			if out_node not in self.output_nodes and out_node.is_output:
+				return_network.output_nodes.append(out_node)
+
+
+			# This covers the weights attribute of the network
+			new_connection = new_in_node.add_output_node(new_out_node, gene.weight, gene.innovation_number)
+			new_connection.enabled = gene.enabled
+			return_network.weights.append(new_connection)
+
+			#this will update the innovation number
+			return_network.current_innovation = gene.innovation_number
+		return_network.genes = genes
+		return return_network
 
 
 
 
 class gene:
-	def __init__(self, input_node, output_node, weight, enabled, inovation_number):
+	def __init__(self, input_node, output_node, weight, enabled, innovation_number):
 		self.input = input_node
 		self.output = output_node
 		self.weight = weight
 		self.enabled = enabled
-		self.inovation = inovation_number
+		self.innovation = innovation_number
 
-input1 = node("1", 1, input_node = True)
-input2 = node("1", 2, input_node = True)
-input3 = node("1", 3, input_node = True)
-input4 = node("4", 4, input_node = True)
-output1 = node("4", output_node = True)
-output2 = node("10", output_node = True)
-output3 = node("11", output_node = True)
-output4 = node("12", output_node = True)
-hidden1 = node("5")
-hidden2 = node("6")
-hidden3 = node("7")
-hidden4 = node("8")
-hidden5 = node("9")
+	def print_gene(self):
+		print("input: ", self.input.label)
+		print("output: ", self.output.label)
+		print("innotvaion number: ", self.innovation)
+		print("DISABLED \n\n\n" if not self.enabled else "\n\n\n")
 
-x = [output1, output2, output3, output4]
-
-input1.add_output_node(output1, 1)
-input1.add_output_node(hidden2, 1)
-input2.add_output_node(hidden1, 1)
-input3.add_output_node(hidden1, 1)
-input3.add_output_node(hidden2, 1)
-input3.add_output_node(hidden3, 1)
-input4.add_output_node(hidden2, 1)
-input4.add_output_node(hidden3, 1)
-hidden1.add_output_node(hidden4, 1)
-hidden1.add_output_node(hidden5, 1)
-hidden2.add_output_node(hidden4, 1)
-hidden2.add_output_node(output3, 1)
-hidden3.add_output_node(hidden5, 1)
-hidden4.add_output_node(output1, 1)
-hidden4.add_output_node(output3, 1)
-hidden5.add_output_node(output2, 1)
-hidden5.add_output_node(output4, 1)
-print(output1.get_value())
-print(output2.get_value())
-print(output3.get_value())
-print(output4.get_value())
-
-expected =np.matrix([2,4,6,8])
-values = [result.get_value() for result in x]
-actual = np.matrix(values)
-cost = .5 * np.linalg.norm(expected - actual)
-print(cost)
 
