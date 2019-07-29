@@ -14,7 +14,7 @@ class Snake{
     Grid grid;
     boolean growing;
     PVector colour = new PVector(0,255, 0);
-    
+         
     Snake(int s, Grid grid){
      position = new PVector(1,1);
      length = 1;
@@ -53,7 +53,7 @@ class Snake{
         }
       } else{
          if(direction != Heading.WEST){
-           direction = Heading.EAST;
+           direction =  Heading.EAST;
             if(position.x != size_of_grid - 1){
             //position.x++;          
           } else{
