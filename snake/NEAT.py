@@ -2,12 +2,17 @@ import numpy as np
 import random
 import networkx as nx
 import time
+import math
+import numpy as np
 
+NEGLIGIBLE_VALUE = .0000000001
 
+def sigmoid(x):
+	return 1/(1 + np.exp(-4.9 * x)) #the modified version for NEAT
 
 def random_exception(length, avoid = None):	
 	if avoid == None:
-		return random.randint(0, length)
+		return random.randint(0, length )
 	else:
 		if len(avoid) >= length:
 			return -1
@@ -15,6 +20,14 @@ def random_exception(length, avoid = None):
 		while return_num in avoid:
 			return_num = random.randint(0, length)
 		return return_num
+
+def abs(x):
+    if type(x) == list:
+        for i in range(len(x)):
+            x[i] = x[i] if x[i] >= 0 else -x[i]
+        return x
+    else:
+        return math.sqrt(x * x) if type(x) != int else int(math.sqrt(x*x))
 
 
 class connection:
@@ -44,7 +57,7 @@ class connection:
 		self = None
 
 class node:
-	def __init__(self, label, value = 1, input_node = False, output_node = False):
+	def __init__(self, label, value = 0, input_node = False, output_node = False):
 		self.value = value #filled by parameter
 		self.label = label #filled by parameter, unique to a given node (mayb a hash value)
 		self.is_input = input_node #filled by parameter
@@ -87,7 +100,7 @@ class node:
 			for con in self.connected_to_in:
 				if con.enabled:
 					total += con.weight * con.input_node.value
-
+			self.value = sigmoid(self.value)
 		return self.value
 
 
@@ -130,14 +143,14 @@ class node:
 
 	#TODO: check to make sure your onlt taking values from nodes connected to the inputs
 	def test_value(self):
-		total = 1
+		total = NEGLIGIBLE_VALUE
 		child_values = []
 		for connection in self.connected_to_in:
 			if connection.enabled:
 				val = connection.input_node.value 
 				child_values.append(val)
 				total += val * connection.weight
-		return (total == self.value, total, self.value, child_values)
+		return (sigmoid(total) == self.value, sigmoid(total), self.value, child_values)
 
 	def test_children(self):
 		for connection in self.connected_to_in:
@@ -148,7 +161,7 @@ class node:
 
 
 class network:
-	def __init__(self):
+	def __init__(self, label = ""):
 		self.nodes = [] #contains all the nodes in the network
 		self.input_nodes = [] #contains all the input nodes of the network
 		self.output_nodes = [] #contains all the putput nodes of the network
@@ -157,6 +170,8 @@ class network:
 		self.current_innovation = 0 #the current innovation nnumber, representing the number of structural mutations
 		self.genes = [] #contains the genes which reppresent this network
 		self.fitness = 0
+		self.shared_fitness = 0
+		self.label = label
 
 
 	# TODO: 1) write a test which check if only the nodes whih are ancestors of the output nodes
@@ -213,6 +228,7 @@ class network:
 
 
 
+
 	# ANOTHER WAY TO DO GET_VALUE:
 	# A node cannot be evaluated unless all of its ancestors are also evaluated (except inputs)
 	# in the event that a ancestor node is not evaluated, run get_value() on that ancestor recursivly
@@ -261,7 +277,7 @@ class network:
 		for node in self.nodes: 
 			if not node.is_input:
 				node.log += "RESET: \t Old Value: " + str(node.value) + "\n"
-				node.value = 1
+				node.value = NEGLIGIBLE_VALUE
 				node.evaluated = False
 				node.times_called = 0
 
@@ -285,11 +301,16 @@ class network:
 			self.nodes.append(new_node)
 			self.output_nodes.append(new_node)
 		#records all of the connections in the network
+		inno = 0
 		for input_node in self.input_nodes:
 			for output in self.output_nodes:
-				new_con = input_node.add_output_node(output, 1)
+				new_con = input_node.add_output_node(output, NEGLIGIBLE_VALUE, inno)
+				
 				if new_con != None:
+					inno += 1
+					self.current_innovation = inno
 					self.weights.append(new_con)
+		self.current_innovation += 1
 
 	
 	# TODO: Develop a way to convert a network into a list of genes, probally should make each connection have an innovation number which gets incremented
@@ -299,36 +320,27 @@ class network:
 		# fifty percent chance to add a new node and fifty percent change to add a connection.
 		coin_flip = random.random()
 
-		# 70% chance to change the weight of a random connection through mutation, 10 percent chance to enable or disable a connection,
-		# 10% to add a random node, 10% to add a new connection witha  random weight value
-		if coin_flip > .3:
+		# 80% chance to change the weight of a random connection through mutation, 12 percent chance to enable or disable a connection,
+		# 3% to add a random node, 5% to add a new connection witha  random weight value
+		if coin_flip > .2:
 			#weight mutatiions
 			coin_flip_2 = random.random()	
 			enabled_weights = [weight for weight in self.weights if weight.enabled]
 			rand_num = random.randint(0, len(enabled_weights) - 1)
 			random_connection = enabled_weights[rand_num]
 
-			# we can a) completly change it with a random number b) change the weight by some percentage (multiply by some number between 0 and 2) 
-			# c) add or subtract a random number between 0 and 1 to/from the weight d) change the sign of the weight e) some combination of these 
-			# techniqiues
-
-			#40% chance to change by some percentage, 40% to add a number from [-1, 1) 10% to flip sign, and 10% to chnage to a completly random number
-			if coin_flip_2 > .6:		
-				#multiply by a random_number from  0 to 2
-				random_connection.weight *= random.random() * 2
-				
-			elif coin_flip_2 > .2:
-				#add a random number from -1 to 1
-				random_connection.weight += random.random() * 2 - 1
-			elif coin_flip_2 > .1:
-				#change the sign
-				random_connection.weight *= -1
+		
+			if coin_flip_2 > .1:		
+				mu, sigma = 0, .5
+				random_value = np.random.normal(mu, sigma)
+				random_connection.weight += random_value
 			else:
-				#adjust later curently [-100, 100)
-				random_connection.weight = random.random() * 100 - 50
+				mu, sigma = 0, 50/3
+				random_connection.weight = np.random.normal(mu, sigma)
+			self.current_innovation += 1
 			return False
-		#change back to .2
-		elif coin_flip > .2:
+		# 12 percent chance to enable or disable
+		elif coin_flip > .08:
 			self.determine_ancestory()
 			#enable or disable a weight
 			rand_num = random.randint(0, len(self.weights) - 1)
@@ -337,20 +349,27 @@ class network:
 
 			
 			#check if the output node for the connection is an ancestor of the input node (the output contributes to the input, making a loop)
+			count = 0
+			failed = False
 			if not rand_connection.enabled:
 				while rand_connection.output_node.is_ancestor(rand_connection.input_node):
 					#rand_connection.terminate(self)
 					rand_num = random.randint(0, len(self.weights) - 1)
 					rand_connection = self.weights[rand_num]
+					count += 1
+					if count > 500:
+						failed = True
+						break
 
-			
-			inode = rand_connection.input_node
-			onode = rand_connection.output_node
-			#inode.mutation_log += "ENABLE/DISABLE CONNECTION: \t "+ rand_connection.to_string() + "\n Ancestor Check: " + str(inode.is_ancestor(onode)) + " Innovation: " + str(self.current_innovation) + "\n"
-			rand_connection.enabled = not rand_connection.enabled
+			if not failed:
+				inode = rand_connection.input_node
+				onode = rand_connection.output_node
+				#inode.mutation_log += "ENABLE/DISABLE CONNECTION: \t "+ rand_connection.to_string() + "\n Ancestor Check: " + str(inode.is_ancestor(onode)) + " Innovation: " + str(self.current_innovation) + "\n"
+				rand_connection.enabled = not rand_connection.enabled
+			self.current_innovation += 1
 			return False
 		#turn back to .1
-		elif coin_flip > .1 or self.current_innovation == 0: # in the event that the network is just beginning
+		elif coin_flip > .05: # in the event that the network is just beginning
 			# innovation number gets updated for each of the structural mutations
 			#self.current_innovation += 1
 			#adds a node, c , into the network by splitting a random edge a->b into two new edges a->c and c->b. Where weight(a->c) = 1 and 
@@ -361,7 +380,7 @@ class network:
 			in_node = random_connection.input_node
 			out_node = random_connection.output_node
 			new_node = node("hidden"+str(len(self.nodes)))
-			connection_1 = in_node.add_output_node(new_node, 1, self.current_innovation)
+			connection_1 = in_node.add_output_node(new_node, NEGLIGIBLE_VALUE, self.current_innovation)
 			connection_2 = new_node.add_output_node(out_node, random_connection.weight, self.current_innovation + 1)
 			if connection_1 != None:
 				self.weights.append(connection_1)
@@ -372,35 +391,44 @@ class network:
 
 			#self.determine_ancestory()
 			random_connection.enabled = False
+			self.current_innovation += 2
 			return True
 
-		elif False	:
+		else:
 			# innovation number gets updated for each of the structural mutations
 			#self.current_innovation += 1
 
 			self.determine_ancestory()
 			#mutate the structutre of the network
 			#for output in self.output_nodes:
-			non_input_nodes = [node for node in self.nodes is not node.is_input]
+			non_input_nodes = [node for node in self.nodes if not node.is_input]
 			non_output_nodes = [node for node in self.nodes if not node.is_output]
 			rand_num_1 = random_exception(len(non_output_nodes) - 1)
 			random_input_node = non_output_nodes[rand_num_1]
 			legal_nodes = [node for node in self.nodes if not random_input_node.is_ancestor(node) 
 			and not random_input_node.is_connected_to_out(node) and not node.is_input]
 			ban_list = []
+			count = 0
+			failed = False
 			while len(legal_nodes) < 1:
 				ban_list.append(rand_num_1)
-				rand_num_1 = random_exception(len(non_output_nodes - 1), ban_list)
+				rand_num_1 = random_exception(len(non_output_nodes) - 1, ban_list)
 				random_input_node = non_output_nodes[rand_num_1]
 				legal_nodes = [node for node in self.nodes if not random_input_node.is_ancestor(node) 
 				and not random_input_node.is_connected_to_out(node) and not node.is_input]
+				count += 1
+				if count > 200:
+					failed = True
+					break
+			if not failed:
+				rand_num_2 = random_exception(len(legal_nodes) - 1)
+				random_output_node = legal_nodes[rand_num_2]
 
-			rand_num_2 = random_exception(len(legal_nodes) - 1)
-			random_output_node = legal_nodes[rand_num_2]
-
-			new_connection = random_input_node.add_output_node(random_node_2, 1, self.current_innovation)
-			if new_connection != None:
-				self.weights.append(new_connection)
+				new_connection = random_input_node.add_output_node(random_output_node, NEGLIGIBLE_VALUE, self.current_innovation)
+				if new_connection != None:
+					self.weights.append(new_connection)
+				self.current_innovation += 1
+				return False
 			return False	
 
 	def generate_graph(self):
@@ -428,24 +456,23 @@ class network:
 	def convert_to_genes(self, innovation):
 		self.genes = []
 		pointer = 0
-		print(innovation)
-		sorted_weights = sorted([weight for weight in self.weights if weight.innovation_number != 0 ], key = lambda x: x.innovation_number)
+		sorted_weights = sorted([weight for weight in self.weights], key = lambda x: x.innovation_number)
 		initial_weights = [weight for weight in self.weights if weight.innovation_number == 0]
-		for w in initial_weights:
+		for w in sorted_weights:
 			self.genes.append(gene(w.input_node, w.output_node, w.weight, w.enabled, w.innovation_number))
 
-		for i in range(innovation + 1):
-			if pointer < len(sorted_weights):	
-				weight = sorted_weights[pointer]
-				if weight.innovation_number != i:
-					#print(weight.innovation_number, i, pointer)
-					self.genes.append(None)
-				else:
-					self.genes.append(gene(weight.input_node, weight.output_node, weight.weight, weight.enabled, weight.innovation_number))
-					pointer += 1
-			else:
-				self.genes.append(None)
-	
+		# for i in range(innovation + 1):
+		# 	if pointer < len(sorted_weights):	
+		# 		weight = sorted_weights[pointer]
+		# 		if weight.innovation_number != i:
+		# 			#print(weight.innovation_number, i, pointer)
+		# 			self.genes.append(None)
+		# 		else:
+		# 			self.genes.append(gene(weight.input_node, weight.output_node, weight.weight, weight.enabled, weight.innovation_number))
+		# 			pointer += 1
+		# 	else:
+		# 		break
+
 
 	def add_new_genes(self):
 		sorted_weights = sorted(self.weights, key = lambda x: x.innovation_number)
@@ -453,7 +480,14 @@ class network:
 			if weight.inovation_number > self.current_innovation:
 				self.genes.append(gene(weight.input_node, weight.output_node, weight.weight, weight.enabled, weight.innovation_number))
 
-	#def determine_fitness(self):
+	#IN PROGRESS
+	def determine_fitness_one_hot(self, expcted):
+		results = self.evaluate_network()
+		self.fitness = np.square(len(results) - sum(abs(list(np.subtract(expcted, results)))))
+		return self.fitness
+
+
+
 
 	
 
@@ -474,8 +508,8 @@ class gene:
 		print(self.input.label, "->", self.output.label, "DISABLED" if not self.enabled else "", "Inovation_number: ", self.innovation , "\n")
 
 
-def create_new_network_from_genes(genes):
-	return_network = network()
+def create_new_network_from_genes(genes, label = ""):
+	return_network = network(label)
 	for gene in genes:
 		if gene != None:
 			in_node = gene.input
@@ -523,6 +557,7 @@ def create_new_network_from_genes(genes):
 				return_network.weights.append(new_connection)
 			else:
 				print("CREATE NETWORK FROM GENE: new_connection is None")
+				gene.print_gene()
 
 			#this will update the innovation number
 			return_network.current_innovation = gene.innovation
@@ -550,10 +585,57 @@ def are_networks_equal(X, Y):
 
 class Population:
 
-	def __init__(self, size):
+	def __init__(self, size, mutation_rate):
 		self.size = size
+		self.networks = []
+		self.mutation_rate = mutation_rate 
+		self.innovation_number = 0
+		self.compatability_threshold = 3.0
+		self.disabled_rate = .75
+		self.species = []
 
+
+	#def compatability_distance(self):
+	#IN PROGRESS
+	def generate_genes(self):
+		for network in self.networks:
+			network.convert_to_genes(0)
+
+
+	def create_population(self, size_inputs, size_outputs, inputs):
+		self.inovation_number = size_inputs * size_outputs
+		for i in range(self.size):
+			member = network("network " + str(i))
+			member.initalize_network(size_inputs, size_outputs, inputs)
+			#member.current_innovation = self.innovation_number
+			self.networks.append(member)
+
+
+	def mutate(self):
+		increment = False
+		for network in self.networks:
+			if random.random() < self.mutation_rate:
+				network.mutation()
+				
+		
+		self.innovation_number += 1
+
+	def evaluate(self):
+		return_list = []
+		for network in self.networks:
+				return_list.append((network.label, network.evaluate_network()))
+		return return_list
+
+	def get_fitness(self, expcted):
+		return_list = []
+		for network in self.networks:
+			return_list.append((network.determine_fitness_one_hot(expcted), network.label, network))
+		return return_list
 	def reproduce(self, network1, network2):
+		parent1 = None
+		parent2 = None
+
+
 		if network1.fitness > network2.fitness:
 			parent1 = network1
 			parent2 = network2
@@ -561,27 +643,281 @@ class Population:
 			parent1 = network2
 			parent2 = network1
 
-		parent1.convert_to_genes()
-		parent2.convert_to_genes()
+		parent1.convert_to_genes(self.innovation_number)
+		parent2.convert_to_genes(self.innovation_number)
 
 		parent1_genes = parent1.genes
 		parent2_genes = parent2.genes
 		child_genes = []
+		
+		p1_count = 0
+		p2_count = 0
+		inno = 0
+		from_p1 = 0
+		from_p2 = 0
+		p1_last_inno = parent1_genes[-1].innovation
+		p2_last_inno = parent2_genes[-1].innovation
+		#print(p1_last_inno, p2_last_inno)
+		while inno < p1_last_inno or inno < p2_last_inno:
 
-		for gene1, gene2 in zip(parent1_genes, parent2_genes):
-			#when both parents have genes on the same innovation number take one at random
-			#to pass on to the child
-			if gene1 != None and gene2 != None:
+			p1_curr =  parent1_genes[p1_count]
+			p2_curr =  parent2_genes[p2_count]
+			
+			if p1_curr.innovation == inno and p2_curr.innovation == inno:
 				if random.random() < .5:
-					child_genes.append(gene1)
-				else: 
-					child_genes.append(gene2)
-			#in the event that there is a mismatch only take the gene from the most fit parent
-			elif gene2 == None and gene1 != None:
-				child_genes.append(gene1)
+					child_genes.append(p1_curr)
+					if random.random() < .25 and not p1_curr.enabled:
+						child_genes[-1].enabled = True
+					from_p1 += 1
+					#print("add from p1: ", inno)
+				else:
+					child_genes.append(p2_curr)
+					if random.random() < .25 and not p2_curr.enabled:
+						child_genes[-1].enabled = True
+					from_p2 += 1
+					#print("add from p2: ", inno)
+				
+				p1_count += 1
+				p2_count += 1
+				inno += 1
+			elif p1_curr.innovation != inno and p2_curr.innovation == inno:
+				#print("disjoint skip: ", inno)
+				p2_count += 1
+				inno += 1
+			elif p1_curr.innovation == inno and p2_curr.innovation != inno:
+				child_genes.append(p1_curr)
+				if random.random() < .25 and not p1_curr.enabled:
+						child_genes[-1].enabled = True
+				from_p1 += 1
+				#print("disjoint from p1: ", inno)
+				inno += 1
+				p1_count += 1
 			else:
-				child_genes.append(None)
+				#print("neither: ", inno)
+				inno += 1
+
+
+			if p1_count >= len(parent1_genes) or p2_count >= len(parent2_genes):
+				print(p1_count, p2_count, inno, len(parent1_genes), len(parent2_genes))
+			if p1_count == len(parent1_genes):
+				break
+			elif p2_count == len(parent2_genes):
+				for gene in parent1_genes[p1_count:]:
+					child_genes.append(gene)
+					from_p1 += 1
+				break
+		print("genes from parent 1: ", from_p1, "genes from parent 2: ", from_p2, "total genes: ", len(child_genes))
 		return child_genes
 
+	#IN PROGRESS
+	# returns a list of the genes which are excess and the network which has tjese excess genes
+	def get_excess_genes(self, network1, network2):
+		network1.convert_to_genes(self.innovation_number)
+		network2.convert_to_genes(self.innovation_number)
+
+		genome1 = network1.genes
+		genome2 = network2.genes 
+
+		# genome1_no_none = [gene for gene in genome1 if gene != None]
+		# genome2_no_none = [gene for gene in genome2 if gene != None]
+
+		# genome1_last_inno = genome1_no_none[-1].innovation
+		# genome2_last_inno = genome2_no_none[-1].innovation
+
+		# bigger_genome = genome1 if genome1_last_inno > genome2_last_inno else genome2
+		# #take the smaller innovation and start one after that one
+		# starting_pos =  genome1_last_inno + 1 if genome2_last_inno > genome1_last_inno else genome2_last_inno + 1
+		# #print("starting pos: ", starting_pos, genome1_last_inno, genome2_last_inno)
+		# excess_genes = [gene for gene in bigger_genome[starting_pos:] if gene != None]
+		# return (excess_genes, len(excess_genes), network1 if bigger_genome == genome1 else network2)
 
 
+
+
+		genome1_last_inno = genome1[-1].innovation
+		genome2_last_inno = genome2[-1].innovation
+		return_list = []
+		excess_network = None
+		if genome2_last_inno == genome1_last_inno:
+			return ([], None)
+		elif genome2_last_inno < genome1_last_inno:
+			for i in range(len(genome1)):
+				if genome1[i].innovation > genome2_last_inno:
+					return_list.append(genome1[i])
+			excess_network = network1
+		elif genome1_last_inno < genome2_last_inno:
+			for i in range(len(genome2)):
+				if genome2[i].innovation > genome1_last_inno:
+					return_list.append(genome2[i])
+			excess_network = network2
+		return (return_list, excess_network)
+
+	#returns a tuple which contains a list of genes which contains the disjoin t genes from
+	# each network
+	def get_disjoint_genes(self, network1, network2):
+		disjoint_from_net1 = [] #inno in net1 but not in net2
+		disjoint_from_net2 = [] #inno in net2 but not in net1
+
+
+		genome1 = network1.genes
+		genome2 = network2.genes 
+		stop_inno = min(genome1[-1].innovation, genome2[-1].innovation)
+
+		network1_index = 0
+		network2_index = 0
+		network1_inno = 0
+		network2_inno = 0
+		inno = 0
+
+
+		n1_curr =  genome1[network1_index]
+		n2_curr =  genome2[network2_index]
+		while n1_curr.innovation<= stop_inno and n2_curr.innovation <= stop_inno:
+		
+
+			if n1_curr.innovation == inno and n2_curr.innovation == inno:
+				network1_index += 1
+				network2_index += 1
+				network1_inno = inno
+				network2_inno = inno
+				inno += 1
+			elif n1_curr.innovation == inno and n2_curr.innovation != inno:
+				disjoint_from_net1.append(n1_curr)
+				network1_index += 1
+				inno += 1
+			elif n1_curr.innovation != inno and n2_curr.innovation == inno:
+				disjoint_from_net2.append(n2_curr)
+				network2_index += 1
+				inno += 1
+			else: 
+				inno += 1
+
+			if network1_index >= len(genome1):
+				break
+			if network2_index >= len(genome2):
+				break
+
+			n1_curr =  genome1[network1_index]
+			n2_curr =  genome2[network2_index]
+		return (disjoint_from_net1, disjoint_from_net2)
+
+
+
+	def compatability_distance(self, network1, network2, w1 = 1, w2 = 1, w3 = .4):
+		
+		genome1 = network1.genes
+		genome2 = network2.genes
+
+
+		N = max(len(genome1), len(genome2))
+		num_excess = len(self.get_excess_genes(network1, network2)[0]) 
+		disjoint = self.get_disjoint_genes(network1, network2)
+		num_disjoint = len(disjoint[0]) + len(disjoint[1])
+		total_weighted_diffrence = 0
+
+
+
+		stop_inno = min(genome1[-1].innovation, genome2[-1].innovation) 
+
+		g1_index = 0
+		g2_index = 0
+		inno = 0
+		g1_curr = genome1[g1_index]
+		g2_curr = genome2[g2_index]
+		num_matching = 0
+
+		while g1_curr.innovation <= stop_inno and g2_curr.innovation <= stop_inno:
+
+			if g1_curr.innovation == inno and g2_curr.innovation == inno:
+				g1_index += 1
+				g2_index += 1
+				inno += 1
+				num_matching += 1
+				diff = 	abs(g1_curr.weight - g2_curr.weight)
+				total_weighted_diffrence += diff
+			elif g1_curr.innovation == inno and g2_curr.innovation != inno:
+				g1_index += 1
+				inno += 1
+			elif g1_curr.innovation != inno and g2_curr.innovation == inno:
+				g2_index += 1
+				inno += 1
+			else:
+				inno += 1
+
+
+			if g1_index >= len(genome1) or g2_index >= len(genome2):
+				break
+			else:
+				g1_curr = genome1[g1_index]
+				g2_curr = genome2[g2_index]
+
+		average_weighted_diffrence = total_weighted_diffrence /  num_matching
+		return w1 * num_excess / N + w2 * num_disjoint / N + w3 * average_weighted_diffrence
+
+	def divide_into_species(self, not_in_species = []):
+		if len(not_in_species) == 0:
+			avaliable_networks = [network for network in self.networks]
+		else:
+			avaliable_networks = not_in_species
+		inital_species = Species(self)
+		founding_member = avaliable_networks[random_exception(len(avaliable_networks) - 1)]
+		self.species.append(inital_species)
+		inital_species.members.append(founding_member)
+		avaliable_networks.remove(founding_member)
+
+
+		for network in avaliable_networks:
+			placed = False
+			for species in self.species:
+				index = random_exception(len(species.members) - 1)
+				sample_member = species.members[index]
+				compatability_distance = self.compatability_distance(network, sample_member)
+				if compatability_distance <= self.compatability_threshold:
+					species.members.append(network)
+					avaliable_networks.remove(network)
+					placed = True
+					break
+			# if it gets to this point that means it was not comapatibly with any of the pervous species
+			# so make a new species with this network as the founding member
+			if not placed:
+				new_species = Species(self)
+				self.species.append(new_species)
+				new_species.members.append(network)
+				avaliable_networks.remove(network)	
+
+
+
+
+
+class Species:
+	def __init__(self, population, size = 0,):	
+		self.size = size 
+		self.members = []
+		self.population = population
+
+	def get_random_member(self):
+		return self.members[random_exception(len(self.members))]
+
+	def average_distance(self):
+		avg = 0
+		if len(self.members) > 1:
+			for member in self.members:
+				avg2 = 0
+				for neighbor in self.members:
+					if member != neighbor:
+						avg2 += self.population.compatability_distance(member, neighbor)
+				avg2 /= len(self.members) - 1
+				avg += avg2
+			avg /= len(self.members)
+			return avg
+		else:
+			return 0
+	def share_fitness(self):
+		for n in self.members:
+			sum_of_distances = 0
+			for n2 in self.members:
+				dist = self.population.compatability_distance(n, n2)
+				if dist > 3:
+					print(n.label, n2.label, dist)
+				sum_of_distances += dist
+			n.shared_fitness = n.fitness / sum_of_distances
