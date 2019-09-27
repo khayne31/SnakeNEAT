@@ -886,6 +886,9 @@ class Population:
 				avaliable_networks.remove(network)	
 
 
+	def sharing_function(distance):
+		return int(distance >= self.compatability_threshold)
+
 
 
 
@@ -912,12 +915,12 @@ class Species:
 			return avg
 		else:
 			return 0
+
+
 	def share_fitness(self):
 		for n in self.members:
 			sum_of_distances = 0
 			for n2 in self.members:
 				dist = self.population.compatability_distance(n, n2)
-				if dist > 3:
-					print(n.label, n2.label, dist)
-				sum_of_distances += dist
+				sum_of_distances += self.population.sharing_function(dist)
 			n.shared_fitness = n.fitness / sum_of_distances
